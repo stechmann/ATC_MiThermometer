@@ -10,20 +10,20 @@ RAM	volatile unsigned int adc_dat_buf[8];
 
 _attribute_ram_code_ void adc_bat_init(void)
 {
-	adc_power_on_sar_adc(0);
-	gpio_set_output_en(GPIO_PB5, 1);
-	gpio_set_input_en(GPIO_PB5, 0);
-	gpio_write(GPIO_PB5, 1);
-	adc_set_sample_clk(5);
-	adc_set_left_right_gain_bias(GAIN_STAGE_BIAS_PER100, GAIN_STAGE_BIAS_PER100);
-	adc_set_chn_enable_and_max_state_cnt(ADC_MISC_CHN, 2);
-	adc_set_state_length(240, 0, 10);
-	analog_write (anareg_adc_res_m, RES14 | FLD_ADC_EN_DIFF_CHN_M);
-	adc_set_ain_chn_misc(B5P, GND);
-	adc_set_ref_voltage(ADC_MISC_CHN, ADC_VREF_1P2V);
-	adc_set_tsample_cycle_chn_misc(SAMPLING_CYCLES_6);
-	adc_set_ain_pre_scaler(ADC_PRESCALER_1F8);
-	adc_power_on_sar_adc(1);
+	adc_power_on_sar_adc(0);  // sets sar_adc power - off -- afe_0xfc
+	gpio_set_output_en(GPIO_PC4, 0); // -- 0x582
+	gpio_set_input_en(GPIO_PC4, 0);  // -- 0x581
+	gpio_write(GPIO_PC4, 0); // -- 0x583
+	adc_set_sample_clk(5); // ADC clock frequency = 24MHz/(adc_clk_div+1) -- afe_0xf4
+	adc_set_left_right_gain_bias(GAIN_STAGE_BIAS_PER100, GAIN_STAGE_BIAS_PER100); // -- not documented afe_0xfc
+	adc_set_chn_enable_and_max_state_cnt(ADC_MISC_CHN, 2); // -- afe_0xf2
+	adc_set_state_length(240, 0, 10); // -- afe_0xef, afe_0xf0, afe_0xf1
+	analog_write (anareg_adc_res_m, RES14 | FLD_ADC_EN_DIFF_CHN_M); // -- afe_0xec
+	adc_set_ain_chn_misc(C4P, GND); // -- afe_0xe8
+	adc_set_ref_voltage(ADC_MISC_CHN, ADC_VREF_1P2V); // -- afe_0xe7
+	adc_set_tsample_cycle_chn_misc(SAMPLING_CYCLES_6); // -- afe_0xee
+	adc_set_ain_pre_scaler(ADC_PRESCALER_1F8); // -- afe_0xfa
+	adc_power_on_sar_adc(1); // -- afe_0xfc
 }
 
 _attribute_ram_code_ uint16_t get_battery_mv()
@@ -45,7 +45,7 @@ _attribute_ram_code_ uint16_t get_battery_mv()
 	while(!clock_time_exceed(t0, 25));
 	adc_config_misc_channel_buf((uint16_t *)adc_dat_buf, 8<<2);
 	dfifo_enable_dfifo2();
-	
+
 	for(i=0;i<8;i++){
 		while(!adc_dat_buf[i]);
 		if(adc_dat_buf[i] & BIT(13)){
@@ -69,14 +69,14 @@ _attribute_ram_code_ uint16_t get_battery_mv()
 	u32 adc_average = (adc_sample[2] + adc_sample[3] + adc_sample[4] + adc_sample[5])/4;
 	adc_result = adc_average;
 	batt_vol_mv  = (adc_result * adc_vref_cfg.adc_vref)>>10;
-	
-	
+
+
 return batt_vol_mv;
 }
 
 uint8_t get_battery_level(uint16_t battery_mv){
 	uint8_t battery_level = (battery_mv-2200)/(31-22);
 	if(battery_level>100)battery_level=100;
-	if(battery_mv<2200)battery_level=0;
+	if(battery_level<0)battery_level=0;
 	return battery_level;
 }

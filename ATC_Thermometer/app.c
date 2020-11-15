@@ -1,63 +1,88 @@
 #include <stdint.h>
+#include <math.h>
 #include "tl_common.h"
 #include "drivers.h"
 #include "stack/ble/ble.h"
 #include "vendor/common/blt_common.h"
 
+#include "includes.h"
+
 RAM uint32_t last_delay = 0xFFFF0000, last_adv_delay = 0xFFFF0000, last_battery_delay = 0xFFFF0000;
 RAM bool last_smiley;
 int16_t temp = 0;
-uint16_t humi = 0;
-RAM uint8_t adv_count = 0;
-RAM uint8_t meas_count = 254;
 RAM int16_t last_temp;
-RAM uint16_t last_humi;
-RAM uint8_t battery_level;
-RAM uint16_t battery_mv;
-RAM bool show_batt_or_humi;
 
 //Settings
-RAM bool temp_C_or_F;
-RAM bool blinking_smiley = false;
-RAM bool comfort_smiley = true;
 RAM bool show_batt_enabled = true;
-RAM bool advertising_type = false;//Custom or Mi Advertising (true)
-RAM uint8_t advertising_interval = 6;//advise new values - multiply by 10 for value
-RAM uint8_t measure_interval = 10;//time = loop interval * factor (def: about 7 * X)
-RAM int8_t temp_offset;
-RAM int8_t humi_offset;
+RAM uint16_t advertising_interval = 60000;// in 1/10 ms
 RAM uint8_t temp_alarm_point = 5;//divide by ten for value
-RAM uint8_t humi_alarm_point = 5;
 
-RAM int16_t comfort_x[] = {2000, 2560, 2700, 2500, 2050, 1700, 1600, 1750};
-RAM uint16_t comfort_y[] = {2000, 1980, 3200, 6000, 8200, 8600, 7700, 3800};
+// Bereich von 56 - 235 gültig
+uint16_t temperature_map[256] = {
+    /*   0 */ 255, /*   1 */ 255, /*   2 */ 255, /*   3 */ 255, /*   4 */ 255,
+    /*   5 */ 255, /*   6 */ 255, /*   7 */ 255, /*   8 */ 255, /*   9 */ 147,
+    /*  10 */ 143, /*  11 */ 139, /*  12 */ 136, /*  13 */ 133, /*  14 */ 131,
+    /*  15 */ 129, /*  16 */ 127, /*  17 */ 125, /*  18 */ 123, /*  19 */ 120,
+    /*  20 */ 117, /*  21 */ 116, /*  22 */ 115, /*  23 */ 113, /*  24 */ 111,
+    /*  25 */ 110, /*  26 */ 109, /*  27 */ 108, /*  28 */ 107, /*  29 */ 105,
+    /*  30 */ 103, /*  31 */ 102, /*  32 */ 101, /*  33 */ 101, /*  34 */ 100,
+    /*  35 */  99, /*  36 */  98, /*  37 */  98, /*  38 */  97, /*  39 */  96,
+    /*  40 */  95, /*  41 */  94, /*  42 */  94, /*  43 */  93, /*  44 */  93,
+    /*  45 */  92, /*  46 */  92, /*  47 */  91, /*  48 */  91, /*  49 */  90,
+    /*  50 */  89, /*  51 */  88, /*  52 */  87, /*  53 */  86, /*  54 */  86,
+    /*  55 */  85, /*  56 */  83, /*  57 */  82, /*  58 */  82, /*  59 */  81,
+    /*  60 */  80, /*  61 */  79, /*  62 */  78, /*  63 */  77, /*  64 */  77,
+    /*  65 */  76, /*  66 */  75, /*  67 */  75, /*  68 */  74, /*  69 */  74,
+    /*  70 */  73, /*  71 */  73, /*  72 */  72, /*  73 */  72, /*  74 */  71,
+    /*  75 */  71, /*  76 */  70, /*  77 */  70, /*  78 */  69, /*  79 */  69,
+    /*  80 */  69, /*  81 */  68, /*  82 */  68, /*  83 */  67, /*  84 */  67,
+    /*  85 */  67, /*  86 */  66, /*  87 */  66, /*  88 */  65, /*  89 */  65,
+    /*  90 */  65, /*  91 */  64, /*  92 */  64, /*  93 */  63, /*  94 */  63,
+    /*  95 */  63, /*  96 */  62, /*  97 */  62, /*  98 */  61, /*  99 */  61,
+    /* 100 */  60, /* 101 */  60, /* 102 */  60, /* 103 */  60, /* 104 */  59,
+    /* 105 */  59, /* 106 */  59, /* 107 */  58, /* 108 */  58, /* 109 */  57,
+    /* 110 */  57, /* 111 */  57, /* 112 */  56, /* 113 */  56, /* 114 */  56,
+    /* 115 */  55, /* 116 */  55, /* 117 */  55, /* 118 */  54, /* 119 */  54,
+    /* 120 */  54, /* 121 */  53, /* 122 */  53, /* 123 */  53, /* 124 */  52,
+    /* 125 */  52, /* 126 */  52, /* 127 */  52, /* 128 */  51, /* 129 */  51,
+    /* 130 */  51, /* 131 */  50, /* 132 */  50, /* 133 */  50, /* 134 */  50,
+    /* 135 */  49, /* 136 */  49, /* 137 */  49, /* 138 */  48, /* 139 */  48,
+    /* 140 */  48, /* 141 */  47, /* 142 */  47, /* 143 */  47, /* 144 */  46,
+    /* 145 */  46, /* 146 */  46, /* 147 */  46, /* 148 */  45, /* 149 */  45,
+    /* 150 */  45, /* 151 */  45, /* 152 */  44, /* 153 */  44, /* 154 */  43,
+    /* 155 */  43, /* 156 */  43, /* 157 */  42, /* 158 */  42, /* 159 */  42,
+    /* 160 */  42, /* 161 */  41, /* 162 */  41, /* 163 */  41, /* 164 */  41,
+    /* 165 */  40, /* 166 */  40, /* 167 */  40, /* 168 */  39, /* 169 */  39,
+    /* 170 */  39, /* 171 */  39, /* 172 */  38, /* 173 */  38, /* 174 */  38,
+    /* 175 */  37, /* 176 */  37, /* 177 */  37, /* 178 */  37, /* 179 */  36,
+    /* 180 */  36, /* 181 */  36, /* 182 */  35, /* 183 */  35, /* 184 */  35,
+    /* 185 */  34, /* 186 */  34, /* 187 */  34, /* 188 */  34, /* 189 */  33,
+    /* 190 */  33, /* 191 */  33, /* 192 */  33, /* 193 */  32, /* 194 */  32,
+    /* 195 */  32, /* 196 */  31, /* 197 */  31, /* 198 */  31, /* 199 */  31,
+    /* 200 */  30, /* 201 */  30, /* 202 */  30, /* 203 */  29, /* 204 */  29,
+    /* 205 */  29, /* 206 */  29, /* 207 */  28, /* 208 */  28, /* 209 */  28,
+    /* 210 */  28, /* 211 */  27, /* 212 */  27, /* 213 */  27, /* 214 */  27,
+    /* 215 */  26, /* 216 */  26, /* 217 */  26, /* 218 */  25, /* 219 */  25,
+    /* 220 */  25, /* 221 */  24, /* 222 */  24, /* 223 */  24, /* 224 */  23,
+    /* 225 */  23, /* 226 */  23, /* 227 */  22, /* 228 */  22, /* 229 */  22,
+    /* 230 */  21, /* 231 */  21, /* 232 */  21, /* 233 */  20, /* 234 */  20,
+    /* 235 */  20, /* 236 */  20, /* 237 */  20, /* 238 */  19, /* 239 */  19,
+    /* 240 */  19, /* 241 */  18, /* 242 */  18, /* 243 */  17, /* 244 */  17,
+    /* 245 */  16, /* 246 */  16, /* 247 */  16, /* 248 */  15, /* 249 */  15,
+    /* 250 */  15, /* 251 */  15, /* 252 */  14, /* 253 */  14, /* 254 */  14,
+    /* 255 */  13
+};
 
-_attribute_ram_code_ bool is_comfort(int16_t t, uint16_t h) {
-    bool c = 0;
-    uint8_t npol = sizeof(comfort_x);
-    for (uint8_t i = 0, j = npol - 1; i < npol; j = i++) 
-    {
-      if ((
-        (comfort_y[i] < comfort_y[j]) && (comfort_y[i] <= h) && (h <= comfort_y[j]) &&
-        ((comfort_y[j] - comfort_y[i]) * (t - comfort_x[i]) > (comfort_x[j] - comfort_x[i]) * (h - comfort_y[i]))
-      ) || (
-        (comfort_y[i] > comfort_y[j]) && (comfort_y[j] <= h) && (h <= comfort_y[i]) &&
-        ((comfort_y[j] - comfort_y[i]) * (t - comfort_x[i]) < (comfort_x[j] - comfort_x[i]) * (h - comfort_y[i]))
-      ))
-        c = !c;
-    }
-    return c;
-}
+
+
 
 void user_init_normal(void){//this will get executed one time after power up
 	random_generator_init();  //must
-	init_ble();	
+	init_ble();
 	init_sensor();
-	init_lcd();	
+	init_lcd();
 	init_flash();
 	show_atc_mac();
-	battery_mv = get_battery_mv();
-	battery_level = get_battery_level(get_battery_mv());
 }
 
 _attribute_ram_code_ void user_init_deepRetn(void){//after sleep this will get executed
@@ -66,80 +91,45 @@ _attribute_ram_code_ void user_init_deepRetn(void){//after sleep this will get e
 	blc_ll_recoverDeepRetention();
 }
 
-void main_loop(){	
+void main_loop(){
 	if((clock_time()-last_delay) > 5000*CLOCK_SYS_CLOCK_1MS){//main loop delay
-	
-		if((clock_time()-last_battery_delay) > 5*60000*CLOCK_SYS_CLOCK_1MS){//Read battery delay
-			battery_mv = get_battery_mv();
-			battery_level = get_battery_level(get_battery_mv());
-			last_battery_delay = clock_time();
-		}
+        // maximum analog value is 1318. ">> 2" is "/ 4"
+        temp = get_battery_mv() >> 2;
 
-		if(meas_count >= measure_interval){
-			read_sensor(&temp,&humi,true);		
-			temp += temp_offset;
-			humi += humi_offset;
-			meas_count=0;
-		
-			if((temp-last_temp > temp_alarm_point)||(last_temp-temp > temp_alarm_point)||(humi-last_humi > humi_alarm_point)||(last_humi-humi > humi_alarm_point)){// instant advertise on to much sensor difference
-				set_adv_data(temp, humi, battery_level, battery_mv);
-			}
-			last_temp = temp;
-			last_humi = humi;
-		}	
-		meas_count++;
-		
-		if(temp_C_or_F){
-			show_temp_symbol(2);
-			show_big_number(((((last_temp*10)/5)*9)+3200)/10,1);//convert C to F
-		}else{
-			show_temp_symbol(1);
-			show_big_number(last_temp,1);
-		}
+        if (temp < 256) {
+            if ((temp >= 56) && (temp <= 235)) {
+                show_big_number(temperature_map[temp], 0);
+                show_temp_symbol(1);
+            }
+            else {
+                show_big_number(temp, 0);
+                show_temp_symbol(0);
+            }
+        }
+        else
+        {
+            show_dashes();
+            show_temp_symbol(0);
+        }
 
-		if(!show_batt_enabled) show_batt_or_humi = true;
-		
-		if(show_batt_or_humi){//Change between Humidity displaying and battery level if show_batt_enabled=true
-			show_small_number(last_humi,1);	
-		    show_battery_symbol(0);   
-		}else{
-			show_small_number((battery_level==100)?99:battery_level,1);
-			show_battery_symbol(1);
-		}
-		
-		show_batt_or_humi = !show_batt_or_humi;
-		
 		if(ble_get_connected()){//If connected notify Sensor data
-			ble_send_temp(last_temp);
-			ble_send_humi(last_humi);
-			ble_send_battery(battery_level);
+            if (temp < 256)
+			    ble_send_temp(temperature_map[temp]);
+            else
+                ble_send_temp(0);
 		}
 
-		if((clock_time() - last_adv_delay) > (advertising_type?5000:10000)*CLOCK_SYS_CLOCK_1MS){//Advetise data delay
-		    if(adv_count >= advertising_interval){
-			set_adv_data(last_temp, last_humi, battery_level, battery_mv);
+		if((clock_time()-last_adv_delay) > advertising_interval*CLOCK_SYS_CLOCK_1MS){//Advetise data delay
+			set_adv_data(temp);
 			last_adv_delay = clock_time();
-			adv_count=0;
-		    }
-		    adv_count++;
+		}else if((temp-last_temp > temp_alarm_point)||(last_temp-temp > temp_alarm_point)) {// instant advertise on to much sensor difference
+			set_adv_data(temp);
 		}
-		
-		if(comfort_smiley) {
-			if(is_comfort(last_temp * 10, last_humi * 100)){
-				show_smiley(1);
-			} else {
-				show_smiley(2);
-			}
-		}
+		last_temp = temp;
 
-		if(blinking_smiley){//If Smiley should blink do it
-		last_smiley=!last_smiley;
-		show_smiley(last_smiley);
-		}
-		
 		update_lcd();
 		last_delay = clock_time();
 	}
 	blt_sdk_main_loop();
-	blt_pm_proc();	
+	blt_pm_proc();
 }

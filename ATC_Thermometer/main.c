@@ -4,6 +4,8 @@
 #include "stack/ble/ble.h"
 #include "vendor/common/user_config.h"
 
+#include "includes.h"
+
 extern void user_init_normal();
 extern void user_init_deepRetn();
 extern void main_loop (void);
@@ -26,14 +28,14 @@ _attribute_ram_code_ int main (void)    //must run in ramcode
 	clock_init(SYS_CLK_24M_Crystal);
 #endif
 	blc_app_loadCustomizedParameters();
-	
+
 	init_i2c();
 	if( deepRetWakeUp ){
 		user_init_deepRetn ();
 	}
 	else{
 		user_init_normal ();
-	}	
+	}
     irq_enable();
 	while (1) {
 		main_loop ();
